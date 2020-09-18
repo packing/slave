@@ -32,8 +32,8 @@ var (
     setsided bool
 
     addr        string
-    dbAddr      string
-    adapterAddr string
+    addrListen  string
+    unixAddr    string
 
     pprofFile string
 
@@ -48,13 +48,13 @@ var (
     scriptEngine = ScriptEngineV8
 
     unix     *nnet.UnixUDP = nil
-    unixSend *nnet.UnixUDP = nil
+    tcpCtrl  *nnet.TCPClient = nil
 )
 
 func usage() {
     fmt.Fprint(os.Stderr, `slave
 
-Usage: slave [-hv] [-d daemon] [-f pprof file] [-b db addr] [-m cpu limit] [-e script engine]
+Usage: slave [-hv] [-d daemon] [-f pprof file] [-c master addr] [-m vm limit] [-e script entryfile]
 
 Options:
 `)
@@ -69,16 +69,72 @@ func sayHello() error {
     msg.SetTag(messages.ProtocolTagMaster)
     req := codecs.IMMap{}
     req[messages.ProtocolKeyId] = os.Getpid()
-    req[messages.ProtocolKeyGoroutine] = runtime.NumGoroutine()
-    req[messages.ProtocolKeyValue] = 0
+    req[messages.ProtocolKeyUnixAddr] = unixAddr
+    req[messages.ProtocolKeyValue] = getVMFree()
     msg.SetBody(req)
     pck, err := messages.DataFromMessage(msg)
     if err == nil {
-        _, err = unixSend.SendTo(addr, pck)
-    } else {
-
+        tcpCtrl.Send(pck)
     }
     return err
+}
+
+func reportState() error {
+    defer func() {
+        utils.LogPanic(recover())
+    }()
+    msg := messages.CreateS2SMessage(messages.ProtocolTypeSlaveChange)
+    msg.SetTag(messages.ProtocolTagMaster)
+    req := codecs.IMMap{}
+    req[messages.ProtocolKeyValue] = getVMFree()
+    msg.SetBody(req)
+    pck, err := messages.DataFromMessage(msg)
+    if err == nil {
+        tcpCtrl.Send(pck)
+    }
+    return err
+}
+
+func sendMessage(sAddr string, sId uint64, message codecs.IMData) int {
+    body, ok := message.(codecs.IMMap)
+    if !ok {
+        return 0
+    }
+    useUnixSocket := sId == 0
+    msg := messages.CreateS2SMessage(messages.ProtocolTypeDeliver)
+    msg.SetTag(messages.ProtocolTagAdapter)
+    msg.SetBody(body)
+    if !useUnixSocket {
+        //msg.SetTag(messages.ProtocolTagMaster)
+        if sId > 0 {
+            msg.SetSessionId([]nnet.SessionID{sId})
+        }
+    }
+    pck, err := messages.DataFromMessage(msg)
+    if err == nil {
+        if useUnixSocket {
+            unix.SendTo(sAddr, pck)
+        } else {
+            tcpCtrl.Send(pck)
+        }
+    }
+    return 0
+}
+
+func sendMessageTo(message codecs.IMData) int {
+    body, ok := message.(codecs.IMMap)
+    if !ok {
+        return 0
+    }
+
+    msg := messages.CreateS2SMessage(messages.ProtocolTypeDeliver)
+    msg.SetTag(messages.ProtocolTagAdapter)
+    msg.SetBody(body)
+    pck, err := messages.DataFromMessage(msg)
+    if err == nil {
+        tcpCtrl.Send(pck)
+    }
+    return 0
 }
 
 func main() {
@@ -88,9 +144,9 @@ func main() {
     flag.BoolVar(&daemon, "d", false, "run at daemon")
     flag.BoolVar(&setsided, "s", false, "already run at daemon")
     flag.StringVar(&pprofFile, "f", "", "pprof file")
-    flag.StringVar(&dbAddr, "b", "", "db addr")
-    flag.IntVar(&cpuNum, "m", 0, "cpu limit")
-    flag.IntVar(&scriptEngine, "e", ScriptEngineV8, "script engine")
+    flag.StringVar(&addr, "c", "127.0.0.1:10088", "controller addr")
+    flag.IntVar(&cpuNum, "m", 100, "cpu limit")
+    flag.StringVar(&sckDir, "e", sckDir, "script entryfile")
     flag.Usage = usage
 
     flag.Parse()
@@ -105,12 +161,6 @@ func main() {
         return
     }
 
-    if cpuNum > 0 {
-        runtime.GOMAXPROCS(cpuNum)
-    }
-
-    addr = "./sockets/master.sock"
-    adapterAddr = "./sockets/adapter.sock"
     logDir = "./logs/slave"
     if !daemon {
         logDir = ""
@@ -121,13 +171,10 @@ func main() {
         }
     }
 
-    //os.Chdir("../")
-
     pidFile = "./pid"
     utils.GeneratePID(pidFile)
 
-    unixAddr := "./sockets/slave.sock"
-    unixSendAddr := "./sockets/slave_sender.sock"
+    unixAddr = fmt.Sprintf("/tmp/slave_%d.sock", os.Getpid())
 
     var pproff *os.File = nil
     if pprofFile != "" {
@@ -145,7 +192,6 @@ func main() {
             pproff.Close()
         }
 
-        syscall.Unlink(unixSendAddr)
         syscall.Unlink(unixAddr)
 
         utils.RemovePID(pidFile)
@@ -161,7 +207,7 @@ func main() {
     //注册通信协议
     env.RegisterPacketFormat(packets.PacketFormatNB)
 
-    //创建s2s管道
+    //清理sock文件
     _, err := os.Stat(unixAddr)
     if err == nil || !os.IsNotExist(err) {
         err = os.Remove(unixAddr)
@@ -169,51 +215,64 @@ func main() {
             utils.LogError("无法删除unix管道旧文件", err)
         }
     }
-    _, err = os.Stat(unixSendAddr)
-    if err == nil || !os.IsNotExist(err) {
-        err = os.Remove(unixSendAddr)
-        if err != nil {
-            utils.LogError("无法删除unix发送管道旧文件", err)
-        }
-    }
 
     if scriptEngine == ScriptEngineV8 {
+        utils.LogInfo("==============================================================")
+        utils.LogInfo(">>> 当前V8引擎版本: %s", v8go.Version())
+        utils.LogInfo(">>> 上下文缓冲数量: %d", cpuNum)
+        utils.LogInfo("==============================================================")
         v8go.Init()
+
+        v8go.OnOutput = func(s string) {
+            utils.LogRaw(s)
+        }
+
+        v8go.OnSendMessage = sendMessage
+        v8go.OnSendMessageTo = sendMessageTo
+
+        if cpuNum > 0 {
+            freeVMQueue = make(chan *v8go.VM, cpuNum)
+            if !fillAllVM(cpuNum) {
+                cpuNum = 0
+            }
+        }
     } else {
         utils.LogError("!!!不支持的脚本引擎类型 %d", scriptEngine)
         return
-    }
-    if err != nil {
-        utils.LogError("!!!脚本引擎初始化失败", err)
     }
 
     messages.GlobalDispatcher.MessageObjectMapped(messages.ProtocolSchemeS2S, messages.ProtocolTagSlave, ClientMessageObject{})
     messages.GlobalDispatcher.Dispatch()
 
+    //初始化unixsocket发送管道
     unix = nnet.CreateUnixUDPWithFormat(packets.PacketFormatNB, codecs.CodecIMv2)
     unix.OnDataDecoded = messages.GlobalMessageQueue.Push
     err = unix.Bind(unixAddr)
     if err != nil {
-        utils.LogError("!!!无法创建unix管道", unixAddr, err)
+        utils.LogError("!!!无法创建unixsocket管道 => %s", unixAddr, err)
         unix.Close()
         return
     }
-    unixSend = nnet.CreateUnixUDPWithFormat(packets.PacketFormatNB, codecs.CodecIMv2)
-    err = unixSend.Bind(unixSendAddr)
+
+    tcpCtrl = nnet.CreateTCPClient(packets.PacketFormatNB, codecs.CodecIMv2)
+    tcpCtrl.OnDataDecoded = messages.GlobalMessageQueue.Push
+    err = tcpCtrl.Connect(addr, 0)
     if err != nil {
-        utils.LogError("!!!无法创建unix发送管道", unixSendAddr, err)
+        utils.LogError("!!!无法连接到控制服务器 %s", addr, err)
         unix.Close()
-        unixSend.Close()
+        tcpCtrl.Close()
         return
+    } else {
+        sayHello()
     }
 
     go func() {
         for {
             if !daemon {
                 agvt, tmax, tmin := messages.GlobalDispatcher.GetAsyncInfo()
-                fmt.Printf(">>> 当前 事务 = [平均: %.2f, 峰值: %.2f | %.2f] 编码 = [编码: %.2f, 解码: %.2f] 网络 = [TCP读: %d, TCP写: %d, UNIX读: %d, UNIX写: %d]\r",
+                fmt.Printf(">>> 当前 事务 = [平均: %.2f, 峰值: %.2f | %.2f] VM = [FREE: %d, USED: %d] 网络 = [TCP读: %d, TCP写: %d, UNIX读: %d, UNIX写: %d]\r",
                     float64(agvt)/float64(time.Millisecond), float64(tmin)/float64(time.Millisecond), float64(tmax)/float64(time.Millisecond),
-                    float64(nnet.GetEncodeAgvTime())/float64(time.Millisecond), float64(nnet.GetDecodeAgvTime())/float64(time.Millisecond),
+                    getVMFree(), cpuNum - getVMFree(),
                     nnet.GetTotalTcpRecvSize(),
                     nnet.GetTotalTcpSendSize(),
                     nnet.GetTotalUnixRecvSize(),
@@ -223,21 +282,23 @@ func main() {
             time.Sleep(1 * time.Second)
         }
     }()
-
     go func() {
         for {
-            sayHello()
-            runtime.Gosched()
             time.Sleep(10 * time.Second)
+            reportState()
+            runtime.Gosched()
         }
     }()
+
 
     utils.LogInfo(">>> 当前协程数量 > %d", runtime.NumGoroutine())
     env.Schedule()
 
     if scriptEngine == ScriptEngineV8 {
+        freeAllVM()
         v8go.Dispose()
     }
-    unixSend.Close()
+
+    tcpCtrl.Close()
     unix.Close()
 }

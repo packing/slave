@@ -19,6 +19,16 @@ func OnDeliver(msg *messages.Message) (error) {
         return errors.ErrorDataNotMatch
     }
 
+    vm := getVM()
+    ssids := msg.GetSessionId()
+    if ssids != nil && len(ssids) > 0 {
+        vm.SetAssociatedSourceId(ssids[0])
+    } else {
+        vm.SetAssociatedSourceId(0)
+        vm.SetAssociatedSourceAddr(msg.GetUnixSource())
+    }
+    vm.DispatchMessage(realMsg.GetSessionId()[0], data)
+    freeVM(vm)
     return nil
 }
 
