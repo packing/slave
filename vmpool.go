@@ -38,6 +38,7 @@ func getVMFree() int {
 func freeAllVM() {
     for getVMFree() > 0 {
         vm := getVM()
+        vm.PrintMemStat()
         vm.Dispose()
     }
     close(freeVMQueue)

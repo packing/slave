@@ -22,6 +22,7 @@ import (
 
 const (
     ScriptEngineV8 = iota
+    ScriptEngineGoja
 )
 
 var (
@@ -236,6 +237,8 @@ func main() {
                 cpuNum = 0
             }
         }
+    } else if scriptEngine == ScriptEngineGoja {
+
     } else {
         utils.LogError("!!!不支持的脚本引擎类型 %d", scriptEngine)
         return
