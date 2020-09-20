@@ -322,6 +322,7 @@ func (vm *GojaVM) Load(path string) bool {
         sUrl, _ := url.Parse(wd)
         fUrl, _ := url.Parse(path)
         rUrl := sUrl.ResolveReference(fUrl)
+        println(rUrl.String())
         vm.consumer, err = sourcemap.Parse("file://" + rUrl.String(), fmapbs)
     }
     _, err = vm.Runtime.RunScript(path, string(fbs))
