@@ -246,6 +246,8 @@ func main() {
     if cpuNum > 0 {
         if !createQueue(cpuNum) {
             cpuNum = 0
+            utils.LogError("!!! 脚本池初始化失败")
+            return
         }
     }
 

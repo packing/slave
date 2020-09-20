@@ -5,8 +5,9 @@ import (
     "io/ioutil"
     "strconv"
 
-    "github.com/dop251/goja"
-    "github.com/dop251/goja_nodejs/require"
+    "github.com/go-sourcemap/sourcemap"
+    "github.com/packing/goja"
+    "github.com/packing/goja_nodejs/require"
     "github.com/packing/nbpy/utils"
 )
 
@@ -16,7 +17,6 @@ var OnGojaSendMessage func(string, uint64, interface{}) int = nil
 var OnGojaSendMessageTo func(interface{}) int = nil
 
 var gojaRequire = new(require.Registry)
-
 
 type Util struct {
     runtime *goja.Runtime
@@ -94,7 +94,7 @@ func (c *Console) formatArgs(args []goja.Value) string {
     var fargs = args[1:]
     c.util.Format(&b, fmt, fargs...)
 
-    return b.String()
+    return "[J] " + b.String()
 }
 
 func (c *Console) log(logLevel int) func(goja.FunctionCall) goja.Value {
@@ -133,7 +133,7 @@ func (c *Console) log(logLevel int) func(goja.FunctionCall) goja.Value {
 func requireConsole(runtime *goja.Runtime, module *goja.Object) {
     c := &Console{
         runtime: runtime,
-        util: &Util{runtime:runtime},
+        util:    &Util{runtime: runtime},
     }
 
     o := module.Get("exports").(*goja.Object)
@@ -148,9 +148,8 @@ func EnableConsole(runtime *goja.Runtime) {
     runtime.Set("console", require.Require(runtime, "console"))
 }
 
-
 type GojaVMNet struct {
-    vm   *GojaVM
+    vm *GojaVM
 }
 
 func transferGojaArray2GoArray(goArray []interface{}) []interface{} {
@@ -252,10 +251,46 @@ type GojaVM struct {
     Runtime              *goja.Runtime
     associatedSourceAddr string
     associatedSourceId   uint64
+    consumer             *sourcemap.Consumer
 }
 
+///此channel用来确保只有唯一一个vm上下文的init会被执行
+var gojaInitCallbackCh chan int
+
 func GojaInit() {
+    gojaInitCallbackCh = make(chan int)
+    go func() {
+        gojaInitCallbackCh <- 1
+    }()
     gojaRequire.RegisterNativeModule("console", requireConsole)
+}
+
+func GenGojaExceptionString(vm *GojaVM, jserr *goja.Exception) string {
+    var b bytes.Buffer
+    b.WriteString(jserr.Value().String())
+    b.WriteByte('\n')
+
+    for i, stack := range jserr.Stacks() {
+        b.WriteString("\tat ")
+        source, _, line, column, ok := vm.consumer.Source(stack.Position().Line, stack.Position().Col)
+        if ok {
+            b.WriteString(source)
+            b.WriteByte(':')
+            b.WriteString(strconv.Itoa(line))
+            b.WriteByte(':')
+            b.WriteString(strconv.Itoa(column))
+            b.WriteString(" (")
+            b.WriteString(strconv.Itoa(i))
+            b.WriteByte(')')
+        } else {
+            b.WriteString(stack.SrcName())
+            b.WriteByte(':')
+            b.WriteString(stack.Position().String())
+        }
+        b.WriteByte('\n')
+    }
+
+    return b.String()
 }
 
 func CreateGojaVM() *GojaVM {
@@ -276,6 +311,12 @@ func (vm *GojaVM) Load(path string) bool {
     if err != nil {
         return false
     }
+
+    vm.consumer = nil
+    fmapbs, err := ioutil.ReadFile(path + ".map")
+    if err == nil {
+        vm.consumer, err = sourcemap.Parse("file://" + path, fmapbs)
+    }
     _, err = vm.Runtime.RunScript(path, string(fbs))
     if err != nil {
         if jserr, ok := err.(*goja.Exception); ok {
@@ -291,6 +332,51 @@ func (vm *GojaVM) Load(path string) bool {
     obj.Set("sendCurrentPlayer", gn.SendCurrentPlayer)
     obj.Set("sendToOtherPlayer", gn.SendToOtherPlayer)
     vm.Runtime.Set("net", obj)
+
+    isRunInited := false
+    gojaInit := vm.Runtime.Get("init")
+    if gojaInit == nil || goja.IsUndefined(gojaInit) {
+        return false
+    } else {
+        init, ok := goja.AssertFunction(gojaInit)
+        if ok {
+            _, ok := <-gojaInitCallbackCh
+            if ok {
+                r, err := init(goja.Undefined())
+                if err != nil {
+                    if jserr, ok := err.(*goja.Exception); ok {
+                        utils.LogError("[J] %s", GenGojaExceptionString(vm, jserr))
+                    }
+                }
+                isRunInited = true
+                close(gojaInitCallbackCh)
+                if r == nil || goja.IsUndefined(r) || goja.IsNull(r) {
+                    return false
+                }
+                if r.ToInteger() != 0 {
+                    return false
+                }
+            }
+        } else {
+            return false
+        }
+    }
+
+    gojaMain := vm.Runtime.Get("main")
+    if gojaMain == nil || goja.IsUndefined(gojaMain) {
+        //...
+    } else {
+        main, ok := goja.AssertFunction(gojaMain)
+        if ok {
+            _, err := main(goja.Undefined())
+            if isRunInited && err != nil {
+                if jserr, ok := err.(*goja.Exception); ok {
+                    utils.LogError("[J] %s", GenGojaExceptionString(vm, jserr))
+                }
+            }
+        }
+    }
+
     return true
 }
 
@@ -416,6 +502,6 @@ func (vm *GojaVM) DispatchMessage(sessionId uint64, msg map[interface{}]interfac
                 utils.LogError("[J] %s", jserr.Error())
             }
         }
-     }
+    }
     return 0
 }
