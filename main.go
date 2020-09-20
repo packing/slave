@@ -46,7 +46,7 @@ var (
 
     cpuNum = 0
 
-    scriptEngine = ScriptEngineV8
+    scriptEngine = ScriptEngineGoja
 
     unix     *nnet.UnixUDP = nil
     tcpCtrl  *nnet.TCPClient = nil
@@ -61,6 +61,8 @@ Options:
 `)
     flag.PrintDefaults()
 }
+
+
 
 func sayHello() error {
     defer func() {
@@ -231,17 +233,20 @@ func main() {
         v8go.OnSendMessage = sendMessage
         v8go.OnSendMessageTo = sendMessageTo
 
-        if cpuNum > 0 {
-            freeVMQueue = make(chan *v8go.VM, cpuNum)
-            if !fillAllVM(cpuNum) {
-                cpuNum = 0
-            }
-        }
     } else if scriptEngine == ScriptEngineGoja {
+        GojaInit()
 
+        OnGojaSendMessage = sendMessage
+        OnGojaSendMessageTo = sendMessageTo
     } else {
         utils.LogError("!!!不支持的脚本引擎类型 %d", scriptEngine)
         return
+    }
+
+    if cpuNum > 0 {
+        if !createQueue(cpuNum) {
+            cpuNum = 0
+        }
     }
 
     messages.GlobalDispatcher.MessageObjectMapped(messages.ProtocolSchemeS2S, messages.ProtocolTagSlave, ClientMessageObject{})
@@ -293,12 +298,13 @@ func main() {
         }
     }()
 
+    go purgeVM()
 
     utils.LogInfo(">>> 当前协程数量 > %d", runtime.NumGoroutine())
     env.Schedule()
 
+    disposeQueue()
     if scriptEngine == ScriptEngineV8 {
-        freeAllVM()
         v8go.Dispose()
     }
 
