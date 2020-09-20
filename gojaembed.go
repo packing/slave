@@ -318,11 +318,9 @@ func (vm *GojaVM) Load(path string) bool {
     fmapbs, err := ioutil.ReadFile(path + ".map")
     if err == nil {
         wd, _ := os.Getwd()
-        println(wd)
-        sUrl, _ := url.Parse(wd)
+        sUrl, _ := url.Parse(wd + "/")
         fUrl, _ := url.Parse(path)
         rUrl := sUrl.ResolveReference(fUrl)
-        println(rUrl.String())
         vm.consumer, err = sourcemap.Parse("file://" + rUrl.String(), fmapbs)
     }
     _, err = vm.Runtime.RunScript(path, string(fbs))
