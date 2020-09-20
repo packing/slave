@@ -320,7 +320,6 @@ func (vm *GojaVM) Load(path string) bool {
         wd, _ := os.Getwd()
         sUrl, _ := url.Parse(wd)
         fUrl, _ := url.Parse(path)
-        println(sUrl)
         rUrl := sUrl.ResolveReference(fUrl)
         vm.consumer, err = sourcemap.Parse("file://" + rUrl.String(), fmapbs)
     }
