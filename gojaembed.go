@@ -3,6 +3,8 @@ package main
 import (
     "bytes"
     "io/ioutil"
+    "net/url"
+    "os"
     "strconv"
 
     "github.com/go-sourcemap/sourcemap"
@@ -315,12 +317,17 @@ func (vm *GojaVM) Load(path string) bool {
     vm.consumer = nil
     fmapbs, err := ioutil.ReadFile(path + ".map")
     if err == nil {
-        vm.consumer, err = sourcemap.Parse("file://" + path, fmapbs)
+        wd, _ := os.Getwd()
+        sUrl, _ := url.Parse(wd)
+        fUrl, _ := url.Parse(path)
+        println(sUrl)
+        rUrl := sUrl.ResolveReference(fUrl)
+        vm.consumer, err = sourcemap.Parse("file://" + rUrl.String(), fmapbs)
     }
     _, err = vm.Runtime.RunScript(path, string(fbs))
     if err != nil {
         if jserr, ok := err.(*goja.Exception); ok {
-            utils.LogError("[J] %s", jserr.Error())
+            utils.LogError("[J] %s", GenGojaExceptionString(vm, jserr))
         }
         return false
     }
@@ -406,7 +413,7 @@ func (vm *GojaVM) DispatchEnter(sessionId uint64, addr string) int {
         _, err := enter(goja.Undefined(), vm.Runtime.ToValue(sessionId), vm.Runtime.ToValue(addr))
         if err != nil {
             if jserr, ok := err.(*goja.Exception); ok {
-                utils.LogError("[J] %s", jserr.Error())
+                utils.LogError("[J] %s", GenGojaExceptionString(vm, jserr))
             }
         }
     }
@@ -423,7 +430,7 @@ func (vm *GojaVM) DispatchLeave(sessionId uint64, addr string) int {
         _, err := enter(goja.Undefined(), vm.Runtime.ToValue(sessionId), vm.Runtime.ToValue(addr))
         if err != nil {
             if jserr, ok := err.(*goja.Exception); ok {
-                utils.LogError("[J] %s", jserr.Error())
+                utils.LogError("[J] %s", GenGojaExceptionString(vm, jserr))
             }
         }
     }
@@ -499,7 +506,7 @@ func (vm *GojaVM) DispatchMessage(sessionId uint64, msg map[interface{}]interfac
         _, err := message(goja.Undefined(), vm.Runtime.ToValue(sessionId), vm.Runtime.ToValue(transferGoMap2GojaMap(msg)))
         if err != nil {
             if jserr, ok := err.(*goja.Exception); ok {
-                utils.LogError("[J] %s", jserr.Error())
+                utils.LogError("[J] %s", GenGojaExceptionString(vm, jserr))
             }
         }
     }
