@@ -273,6 +273,7 @@ func GenGojaExceptionString(vm *GojaVM, jserr *goja.Exception) string {
     b.WriteByte('\n')
 
     for i, stack := range jserr.Stacks() {
+        println(stack.Position().String())
         b.WriteString("\tat ")
         source, _, line, column, ok := vm.consumer.Source(stack.Position().Line, stack.Position().Col)
         if ok {
