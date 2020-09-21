@@ -158,6 +158,18 @@ func transferGojaArray2GoArray(goArray []interface{}) []interface{} {
     newArray := make([]interface{}, len(goArray))
     for i, v := range goArray {
         switch v.(type) {
+        case float64:
+            if float64(int64(v.(float64))) == v {
+                newArray[i] = int64(v.(float64))
+            } else if float64(uint64(v.(float64))) == v {
+                newArray[i] = uint64(v.(float64))
+            }
+        case float32:
+            if float32(int32(v.(float32))) == v {
+                newArray[i] = int32(v.(float32))
+            } else if float32(uint32(v.(float32))) == v {
+                newArray[i] = uint32(v.(float32))
+            }
         case map[string]interface{}:
             newArray[i] = transferGojaMap2GoMap(v.(map[string]interface{}))
         case []interface{}:
@@ -175,6 +187,18 @@ func transferGojaMap2GoMap(goMap map[string]interface{}) map[interface{}]interfa
 
         rv := v
         switch rv.(type) {
+        case float64:
+            if float64(int64(rv.(float64))) == rv {
+                rv = int64(rv.(float64))
+            } else if float64(uint64(rv.(float64))) == rv {
+                rv = uint64(rv.(float64))
+            }
+        case float32:
+            if float32(int32(rv.(float32))) == rv {
+                rv = int32(rv.(float32))
+            } else if float32(uint32(rv.(float32))) == rv {
+                rv = uint32(rv.(float32))
+            }
         case map[string]interface{}:
             rv = transferGojaMap2GoMap(v.(map[string]interface{}))
         case []interface{}:
@@ -323,13 +347,7 @@ func (vm *GojaVM) Load(path string) bool {
         rUrl := sUrl.ResolveReference(fUrl)
         vm.consumer, err = sourcemap.Parse("file://" + rUrl.String(), fmapbs)
     }
-    _, err = vm.Runtime.RunScript(path, string(fbs))
-    if err != nil {
-        if jserr, ok := err.(*goja.Exception); ok {
-            utils.LogError("[J] %s", GenGojaExceptionString(vm, jserr))
-        }
-        return false
-    }
+
     gojaRequire.Enable(vm.Runtime)
     EnableConsole(vm.Runtime)
 
@@ -339,9 +357,18 @@ func (vm *GojaVM) Load(path string) bool {
     obj.Set("sendToOtherPlayer", gn.SendToOtherPlayer)
     vm.Runtime.Set("net", obj)
 
+    _, err = vm.Runtime.RunScript(path, string(fbs))
+    if err != nil {
+        if jserr, ok := err.(*goja.Exception); ok {
+            utils.LogError("[J] %s", GenGojaExceptionString(vm, jserr))
+        }
+        return false
+    }
+
     isRunInited := false
-    gojaInit := vm.Runtime.Get("init")
+    gojaInit := vm.Runtime.Get("__init__")
     if gojaInit == nil || goja.IsUndefined(gojaInit) {
+        utils.LogError("[J] 脚本上下文中缺少了初始化入口函数__init__")
         return false
     } else {
         init, ok := goja.AssertFunction(gojaInit)
@@ -364,11 +391,12 @@ func (vm *GojaVM) Load(path string) bool {
                 }
             }
         } else {
+            utils.LogError("[J] 脚本上下文中缺少了初始化入口函数__init__")
             return false
         }
     }
 
-    gojaMain := vm.Runtime.Get("main")
+    gojaMain := vm.Runtime.Get("__main__")
     if gojaMain == nil || goja.IsUndefined(gojaMain) {
         //...
     } else {
@@ -403,7 +431,7 @@ func (vm *GojaVM) GetAssociatedSourceId() uint64 {
 }
 
 func (vm *GojaVM) DispatchEnter(sessionId uint64, addr string) int {
-    gojaEnter := vm.Runtime.Get("enter")
+    gojaEnter := vm.Runtime.Get("__enter__")
     if gojaEnter == nil || goja.IsUndefined(gojaEnter) {
         return -1
     }
@@ -420,7 +448,7 @@ func (vm *GojaVM) DispatchEnter(sessionId uint64, addr string) int {
 }
 
 func (vm *GojaVM) DispatchLeave(sessionId uint64, addr string) int {
-    gojaEnter := vm.Runtime.Get("leave")
+    gojaEnter := vm.Runtime.Get("__leave__")
     if gojaEnter == nil || goja.IsUndefined(gojaEnter) {
         return -1
     }
@@ -496,7 +524,7 @@ func transferGoMap2GojaMap(goMap map[interface{}]interface{}) map[string]interfa
 }
 
 func (vm *GojaVM) DispatchMessage(sessionId uint64, msg map[interface{}]interface{}) int {
-    gojaEnter := vm.Runtime.Get("message")
+    gojaEnter := vm.Runtime.Get("__message__")
     if gojaEnter == nil || goja.IsUndefined(gojaEnter) {
         return -1
     }
