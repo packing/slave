@@ -15,7 +15,7 @@ func createQueue(limit int) bool {
     for i := 0; i < limit; i ++ {
         var vm v8go.VM
         if scriptEngine == ScriptEngineV8 {
-            vm = v8go.CreateV8VM()
+            //vm = v8go.CreateV8VM()
         } else if scriptEngine == ScriptEngineGoja {
             vm = CreateGojaVM()
         } else {
@@ -33,6 +33,7 @@ func createQueue(limit int) bool {
 
 func getVM() v8go.VM {
     vm := <- freeVMQueue
+
     return vm
 }
 
@@ -41,6 +42,9 @@ func freeVM(vm v8go.VM) {
         if scriptEngine == ScriptEngineV8 {
             recoverVMQueue <- vm
         } else if scriptEngine == ScriptEngineGoja {
+            if freeVMQueue == nil {
+                return
+            }
             freeVMQueue <- vm
         }
     }()
@@ -79,4 +83,5 @@ func disposeQueue() {
         close(recoverVMQueue)
     }
     close(freeVMQueue)
+    freeVMQueue = nil
 }

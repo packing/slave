@@ -15,9 +15,10 @@ import (
     "github.com/packing/nbpy/messages"
     "github.com/packing/nbpy/nnet"
     "github.com/packing/nbpy/packets"
+    "github.com/packing/nbpy/storage"
     "github.com/packing/nbpy/utils"
 
-    "github.com/packing/v8go"
+    //"github.com/packing/v8go"
 )
 
 const (
@@ -32,9 +33,16 @@ var (
     daemon   bool
     setsided bool
 
+    onlyTCP  bool
+
+    unlockflow uint64
+
+    locklogic uint64
+    unlocklogic uint64
+
     addr        string
-    addrListen  string
     unixAddr    string
+    addrStorage string
 
     pprofFile string
 
@@ -48,8 +56,9 @@ var (
 
     scriptEngine = ScriptEngineGoja
 
-    unix     *nnet.UnixUDP = nil
-    tcpCtrl  *nnet.TCPClient = nil
+    unix            *nnet.UnixUDP = nil
+    tcpCtrl         *nnet.TCPClient = nil
+    globalStorage   *storage.Client = nil
 )
 
 func usage() {
@@ -72,7 +81,9 @@ func sayHello() error {
     msg.SetTag(messages.ProtocolTagMaster)
     req := codecs.IMMap{}
     req[messages.ProtocolKeyId] = os.Getpid()
-    req[messages.ProtocolKeyUnixAddr] = unixAddr
+    if !onlyTCP {
+        req[messages.ProtocolKeyUnixAddr] = unixAddr
+    }
     req[messages.ProtocolKeyValue] = getVMFree()
     msg.SetBody(req)
     pck, err := messages.DataFromMessage(msg)
@@ -146,8 +157,10 @@ func main() {
     flag.BoolVar(&version, "v", false, "print version")
     flag.BoolVar(&daemon, "d", false, "run at daemon")
     flag.BoolVar(&setsided, "s", false, "already run at daemon")
+    flag.BoolVar(&onlyTCP, "t", false, "only tcp tunnel")
     flag.StringVar(&pprofFile, "f", "", "pprof file")
     flag.StringVar(&addr, "c", "127.0.0.1:10088", "controller addr")
+    flag.StringVar(&addrStorage, "b", "/tmp/storage.sock", "storage addr")
     flag.IntVar(&cpuNum, "m", 100, "cpu limit")
     flag.StringVar(&sckDir, "e", sckDir, "script entryfile")
     flag.Usage = usage
@@ -219,8 +232,10 @@ func main() {
         }
     }
 
+    globalStorage = storage.CreateClient(addrStorage, time.Second * 5)
+
     if scriptEngine == ScriptEngineV8 {
-        utils.LogInfo("==============================================================")
+        /*utils.LogInfo("==============================================================")
         utils.LogInfo(">>> 当前V8引擎版本: %s", v8go.Version())
         utils.LogInfo(">>> 上下文缓冲数量: %d", cpuNum)
         utils.LogInfo("==============================================================")
@@ -231,7 +246,7 @@ func main() {
         }
 
         v8go.OnSendMessage = sendMessage
-        v8go.OnSendMessageTo = sendMessageTo
+        v8go.OnSendMessageTo = sendMessageTo*/
 
     } else if scriptEngine == ScriptEngineGoja {
         GojaInit()
@@ -280,13 +295,14 @@ func main() {
         for {
             if !daemon {
                 agvt, tmax, tmin := messages.GlobalDispatcher.GetAsyncInfo()
-                fmt.Printf(">>> 当前 事务 = [平均: %.2f, 峰值: %.2f | %.2f] VM = [FREE: %d, USED: %d] 网络 = [TCP读: %d, TCP写: %d, UNIX读: %d, UNIX写: %d]\r",
+                fmt.Printf(">>> 当前 事务 = [平均: %.2f, 峰值: %.2f | %.2f] VM = [FREE: %d, USED: %d] 网络 = [TCP读: %d, TCP写: %d, UNIX读: %d, UNIX写: %d, 流解锁: %d, 逻辑锁: %d / %d]\r",
                     float64(agvt)/float64(time.Millisecond), float64(tmin)/float64(time.Millisecond), float64(tmax)/float64(time.Millisecond),
                     getVMFree(), cpuNum - getVMFree(),
                     nnet.GetTotalTcpRecvSize(),
                     nnet.GetTotalTcpSendSize(),
                     nnet.GetTotalUnixRecvSize(),
-                    nnet.GetTotalUnixSendSize())
+                    nnet.GetTotalUnixSendSize(),
+                        unlockflow, locklogic, unlocklogic)
             }
             runtime.Gosched()
             time.Sleep(1 * time.Second)
@@ -306,10 +322,14 @@ func main() {
     env.Schedule()
 
     disposeQueue()
+
     if scriptEngine == ScriptEngineV8 {
-        v8go.Dispose()
+        //v8go.Dispose()
     }
 
+    if globalStorage != nil {
+        globalStorage.Close()
+    }
     tcpCtrl.Close()
     unix.Close()
 }
