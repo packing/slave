@@ -153,6 +153,8 @@ func sendMessageTo(message codecs.IMData) int {
 
 func main() {
 
+    //runtime.GOMAXPROCS(2)
+
     flag.BoolVar(&help, "h", false, "help message")
     flag.BoolVar(&version, "v", false, "print version")
     flag.BoolVar(&daemon, "d", false, "run at daemon")

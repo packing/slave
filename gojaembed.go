@@ -217,6 +217,36 @@ func transferGojaMap2GoMap(goMap map[string]interface{}) map[interface{}]interfa
     return out
 }
 
+func (n GojaVMNet) Version(call goja.FunctionCall) goja.Value {
+    return n.vm.Runtime.ToValue("v1.0.0")
+}
+
+func (n GojaVMNet) Encode(call goja.FunctionCall) goja.Value {
+    if len(call.Arguments) == 0 {
+        return goja.Null()
+    }
+    v := call.Arguments[0].Export()
+    err, bs := codecs.CodecIMv2.Encoder.Encode(&v)
+    if err == nil {
+        return n.vm.Runtime.ToValue(string(bs))
+    }
+
+    return goja.Null()
+}
+
+func (n GojaVMNet) Decode(call goja.FunctionCall) goja.Value {
+    if len(call.Arguments) == 0 {
+        return goja.Null()
+    }
+    v := call.Arguments[0].String()
+    err, bs, _ := codecs.CodecIMv2.Decoder.Decode([]byte(v))
+    if err == nil {
+        return n.vm.Runtime.ToValue(bs)
+    }
+
+    return goja.Null()
+}
+
 func (n GojaVMNet) SendCurrentPlayer(call goja.FunctionCall) goja.Value {
     if OnGojaSendMessage == nil {
         return n.vm.Runtime.ToValue(-1)
@@ -478,7 +508,24 @@ func (n GojaVMNet) Do(call goja.FunctionCall) goja.Value {
     args := make([]interface{}, 0)
     if len(call.Arguments) > 1 {
         for _, a := range call.Arguments[1:] {
-            args = append(args, a.Export())
+            v := a.Export()
+            switch v.(type) {
+            case map[string] interface{}:
+                var sv codecs.IMData = transferGojaMap2GoMap(v.(map[string]interface{}))
+                err, bs := codecs.CodecIMv2.Encoder.Encode(&sv)
+                if err == nil {
+                    args = append(args, bs)
+                    continue
+                }
+            case []interface{}:
+                var sv codecs.IMData = transferGojaArray2GoArray(v.([]interface{}))
+                err, bs := codecs.CodecIMv2.Encoder.Encode(&sv)
+                if err == nil {
+                    args = append(args, bs)
+                    continue
+                }
+            }
+            args = append(args, v)
         }
     }
 
@@ -487,11 +534,69 @@ func (n GojaVMNet) Do(call goja.FunctionCall) goja.Value {
         return goja.Null()
     }
 
-    //utils.LogError("Do return >>>", rows)
+    switch rows.(type) {
+    case string:
+        return n.vm.Runtime.ToValue(rows)
+    case []byte:
+        bs, ok := rows.([]byte)
+        if ok {
+            err, obj, remain := codecs.CodecIMv2.Decoder.Decode(bs)
+            if err == nil && len(remain) == 0 {
+                switch obj.(type) {
+                case map[interface{}]interface{}:
+                    return n.vm.Runtime.ToValue(transferGoMap2GojaMap(obj.(map[interface{}]interface{})))
+                case []interface{}:
+                    return n.vm.Runtime.ToValue(transferGoArray2GojaArray(obj.([]interface{})))
+                }
+                return n.vm.Runtime.ToValue(obj)
+            }
+        }
+        return n.vm.Runtime.ToValue(string(rows.([]byte)))
+
+    case map[interface{}]interface{}:
+        return n.vm.Runtime.ToValue(transferGoMap2GojaMap(rows.(map[interface{}]interface{})))
+    case []interface{}:
+        return n.vm.Runtime.ToValue(transferGoArray2GojaArray(rows.([]interface{})))
+    }
+
+    return n.vm.Runtime.ToValue(rows)
+}
+
+func (n GojaVMNet) DoRaw(call goja.FunctionCall) goja.Value {
+    if globalStorage == nil {
+        return goja.Null()
+    }
+
+    if len(call.Arguments) == 0 {
+        return goja.Null()
+    }
+
+    cmd := call.Arguments[0].String()
+    args := make([]interface{}, 0)
+    if len(call.Arguments) > 1 {
+        for _, a := range call.Arguments[1:] {
+            v := a.Export()
+            switch v.(type) {
+            case map[string] interface{}:
+                v = transferGojaMap2GoMap(v.(map[string]interface{}))
+            case []interface{}:
+                v = transferGojaArray2GoArray(v.([]interface{}))
+            }
+            args = append(args, v)
+        }
+    }
+
+    rows := globalStorage.RedisDo(cmd, args...)
+    if rows == nil {
+        return goja.Null()
+    }
 
     switch rows.(type) {
-    case string: return n.vm.Runtime.ToValue(rows)
-    case []byte: return n.vm.Runtime.ToValue(string(rows.([]byte)))
+    case string:
+        return n.vm.Runtime.ToValue(rows)
+    case []byte:
+        return n.vm.Runtime.ToValue(string(rows.([]byte)))
+
     case map[interface{}]interface{}:
         return n.vm.Runtime.ToValue(transferGoMap2GojaMap(rows.(map[interface{}]interface{})))
     case []interface{}:
@@ -698,10 +803,16 @@ func (vm *GojaVM) Load(path string) bool {
     EnableConsole(vm.Runtime)
 
     gn := &GojaVMNet{vm: vm}
-    obj := vm.Runtime.NewObject()
-    obj.Set("sendCurrentPlayer", gn.SendCurrentPlayer)
-    obj.Set("sendToOtherPlayer", gn.SendToOtherPlayer)
-    vm.Runtime.Set("net", obj)
+    objGS := vm.Runtime.NewObject()
+    objGS.Set("version", gn.Version)
+    objGS.Set("encode", gn.Encode)
+    objGS.Set("decode", gn.Decode)
+    vm.Runtime.Set("sys", objGS)
+
+    objNet := vm.Runtime.NewObject()
+    objNet.Set("reply", gn.SendCurrentPlayer)
+    objNet.Set("deliver", gn.SendToOtherPlayer)
+    vm.Runtime.Set("net", objNet)
 
     objLock := vm.Runtime.NewObject()
     objLock.Set("init", gn.InitLock)
@@ -719,7 +830,8 @@ func (vm *GojaVM) Load(path string) bool {
     objRedis := vm.Runtime.NewObject()
     objRedis.Set("open", gn.Open)
     objRedis.Set("close", gn.Close)
-    objRedis.Set("doCommand", gn.Do)
+    objRedis.Set("cmd", gn.Do)
+    objRedis.Set("todo", gn.DoRaw)
     objRedis.Set("send", gn.Send)
     objRedis.Set("flush", gn.Flush)
     objRedis.Set("receive", gn.Receive)
