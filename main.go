@@ -10,13 +10,13 @@ import (
     "syscall"
     "time"
 
-    "github.com/packing/nbpy/codecs"
-    "github.com/packing/nbpy/env"
-    "github.com/packing/nbpy/messages"
-    "github.com/packing/nbpy/nnet"
-    "github.com/packing/nbpy/packets"
-    "github.com/packing/nbpy/storage"
-    "github.com/packing/nbpy/utils"
+    "github.com/packing/clove/codecs"
+    "github.com/packing/clove/env"
+    "github.com/packing/clove/messages"
+    "github.com/packing/clove/nnet"
+    "github.com/packing/clove/packets"
+    "github.com/packing/clove/storage"
+    "github.com/packing/clove/utils"
 
     //"github.com/packing/v8go"
 )
@@ -31,7 +31,6 @@ var (
     version bool
 
     daemon   bool
-    setsided bool
 
     onlyTCP  bool
 
@@ -158,7 +157,6 @@ func main() {
     flag.BoolVar(&help, "h", false, "help message")
     flag.BoolVar(&version, "v", false, "print version")
     flag.BoolVar(&daemon, "d", false, "run at daemon")
-    flag.BoolVar(&setsided, "s", false, "already run at daemon")
     flag.BoolVar(&onlyTCP, "t", false, "only tcp tunnel")
     flag.StringVar(&pprofFile, "f", "", "pprof file")
     flag.StringVar(&addr, "c", "127.0.0.1:10088", "controller addr")
@@ -183,7 +181,7 @@ func main() {
     if !daemon {
         logDir = ""
     } else {
-        if !setsided {
+        if os.Getppid() != 1 {
             utils.Daemon()
             return
         }

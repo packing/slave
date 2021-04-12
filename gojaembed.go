@@ -9,10 +9,10 @@ import (
     "sync/atomic"
 
     "github.com/go-sourcemap/sourcemap"
+    "github.com/packing/clove/codecs"
+    "github.com/packing/clove/utils"
     "github.com/packing/goja"
     "github.com/packing/goja_nodejs/require"
-    "github.com/packing/nbpy/codecs"
-    "github.com/packing/nbpy/utils"
 )
 
 var LogLevelAssert = utils.LogLevelError + 1
@@ -340,22 +340,21 @@ func (n GojaVMNet) Lock(call goja.FunctionCall) goja.Value {
         return n.vm.Runtime.ToValue(-1)
     }
 
-
     key := n.vm.defKeyForLock
     if len(call.Arguments) > 0 && !goja.IsUndefined(call.Arguments[0]) && !goja.IsNull(call.Arguments[0]) {
         key = uint64(call.Arguments[0].ToInteger())
     }
 
     /* 此处有争议，单连接可以重复发起加锁请求，因为消息是异步并发的，所以同时有两个消息进了加锁然后都还没到解锁这一步是正常存在的？
-    if key == n.vm.defKeyForLock && n.vm.sidForLock > 0 {
-        stacks := make([]goja.StackFrame, 5)
+       if key == n.vm.defKeyForLock && n.vm.sidForLock > 0 {
+           stacks := make([]goja.StackFrame, 5)
 
-        errStr := GenGojaStackFrameString(n.vm,"[J] !!! Repeat global lock request", n.vm.Runtime.CaptureCallStack(5, stacks))
-        utils.LogError(errStr)
+           errStr := GenGojaStackFrameString(n.vm,"[J] !!! Repeat global lock request", n.vm.Runtime.CaptureCallStack(5, stacks))
+           utils.LogError(errStr)
 
-        n.vm.Runtime.Interrupt("halt")
-        return n.vm.Runtime.ToValue(-1)
-    }*/
+           n.vm.Runtime.Interrupt("halt")
+           return n.vm.Runtime.ToValue(-1)
+       }*/
 
     sid, ok := globalStorage.Lock(key)
     if ok {
@@ -466,7 +465,7 @@ func (n GojaVMNet) Open(call goja.FunctionCall) goja.Value {
 
     if n.vm.defKeyForRedis > 0 {
         stacks := make([]goja.StackFrame, 5)
-        errStr := GenGojaStackFrameString(n.vm,"[J] !!! Redis has been opened", n.vm.Runtime.CaptureCallStack(5, stacks))
+        errStr := GenGojaStackFrameString(n.vm, "[J] !!! Redis has been opened", n.vm.Runtime.CaptureCallStack(5, stacks))
         utils.LogError(errStr)
         return n.vm.Runtime.ToValue(false)
     }
@@ -483,7 +482,7 @@ func (n GojaVMNet) Close(call goja.FunctionCall) goja.Value {
 
     if n.vm.defKeyForRedis == 0 {
         stacks := make([]goja.StackFrame, 5)
-        errStr := GenGojaStackFrameString(n.vm,"[J] !!! Redis has not been opened", n.vm.Runtime.CaptureCallStack(5, stacks))
+        errStr := GenGojaStackFrameString(n.vm, "[J] !!! Redis has not been opened", n.vm.Runtime.CaptureCallStack(5, stacks))
         utils.LogError(errStr)
         return n.vm.Runtime.ToValue(false)
     }
@@ -510,7 +509,7 @@ func (n GojaVMNet) Do(call goja.FunctionCall) goja.Value {
         for _, a := range call.Arguments[1:] {
             v := a.Export()
             switch v.(type) {
-            case map[string] interface{}:
+            case map[string]interface{}:
                 var sv codecs.IMData = transferGojaMap2GoMap(v.(map[string]interface{}))
                 err, bs := codecs.CodecIMv2.Encoder.Encode(&sv)
                 if err == nil {
@@ -577,7 +576,7 @@ func (n GojaVMNet) DoRaw(call goja.FunctionCall) goja.Value {
         for _, a := range call.Arguments[1:] {
             v := a.Export()
             switch v.(type) {
-            case map[string] interface{}:
+            case map[string]interface{}:
                 v = transferGojaMap2GoMap(v.(map[string]interface{}))
             case []interface{}:
                 v = transferGojaArray2GoArray(v.([]interface{}))
@@ -617,7 +616,7 @@ func (n GojaVMNet) Send(call goja.FunctionCall) goja.Value {
 
     if n.vm.defKeyForRedis == 0 {
         stacks := make([]goja.StackFrame, 5)
-        errStr := GenGojaStackFrameString(n.vm,"[J] !!! You must open the Redis before executing send", n.vm.Runtime.CaptureCallStack(5, stacks))
+        errStr := GenGojaStackFrameString(n.vm, "[J] !!! You must open the Redis before executing send", n.vm.Runtime.CaptureCallStack(5, stacks))
         utils.LogError(errStr)
         return n.vm.Runtime.ToValue(false)
     }
@@ -641,7 +640,7 @@ func (n GojaVMNet) Flush(call goja.FunctionCall) goja.Value {
 
     if n.vm.defKeyForRedis == 0 {
         stacks := make([]goja.StackFrame, 5)
-        errStr := GenGojaStackFrameString(n.vm,"[J] !!! You must open the Redis before executing flush", n.vm.Runtime.CaptureCallStack(5, stacks))
+        errStr := GenGojaStackFrameString(n.vm, "[J] !!! You must open the Redis before executing flush", n.vm.Runtime.CaptureCallStack(5, stacks))
         utils.LogError(errStr)
         return n.vm.Runtime.ToValue(false)
     }
@@ -660,7 +659,7 @@ func (n GojaVMNet) Receive(call goja.FunctionCall) goja.Value {
 
     if n.vm.defKeyForRedis == 0 {
         stacks := make([]goja.StackFrame, 5)
-        errStr := GenGojaStackFrameString(n.vm,"[J] !!! You must open the Redis before executing receive", n.vm.Runtime.CaptureCallStack(5, stacks))
+        errStr := GenGojaStackFrameString(n.vm, "[J] !!! You must open the Redis before executing receive", n.vm.Runtime.CaptureCallStack(5, stacks))
         utils.LogError(errStr)
         return goja.Null()
     }
@@ -673,13 +672,13 @@ func (n GojaVMNet) Receive(call goja.FunctionCall) goja.Value {
 }
 
 type GojaVM struct {
-    Runtime                 *goja.Runtime
-    associatedSourceAddr    string
-    associatedSourceId      uint64
-    defKeyForLock           uint64
-    defKeyForRedis          uint64
-    sidForLock              int64
-    consumer                *sourcemap.Consumer
+    Runtime              *goja.Runtime
+    associatedSourceAddr string
+    associatedSourceId   uint64
+    defKeyForLock        uint64
+    defKeyForRedis       uint64
+    sidForLock           int64
+    consumer             *sourcemap.Consumer
 }
 
 ///此channel用来确保只有唯一一个vm上下文的init会被执行
@@ -796,7 +795,7 @@ func (vm *GojaVM) Load(path string) bool {
         sUrl, _ := url.Parse(wd + "/")
         fUrl, _ := url.Parse(path)
         rUrl := sUrl.ResolveReference(fUrl)
-        vm.consumer, err = sourcemap.Parse("file://" + rUrl.String(), fmapbs)
+        vm.consumer, err = sourcemap.Parse("file://"+rUrl.String(), fmapbs)
     }
 
     gojaRequire.Enable(vm.Runtime)

@@ -3,16 +3,16 @@ package main
 import (
     "sync/atomic"
 
-    "github.com/packing/nbpy/codecs"
+    "github.com/packing/clove/codecs"
 
-    "github.com/packing/nbpy/errors"
-    "github.com/packing/nbpy/messages"
+    "github.com/packing/clove/errors"
+    "github.com/packing/clove/messages"
 )
 
 type ClientMessageObject struct {
 }
 
-func OnDeliver(msg *messages.Message) (error) {
+func OnDeliver(msg *messages.Message) error {
     data := msg.GetBody()
     if data == nil {
         return errors.ErrorDataIsDamage
@@ -87,7 +87,7 @@ func OnDeliver(msg *messages.Message) (error) {
     return nil
 }
 
-func (receiver ClientMessageObject) GetMappedTypes() (map[int]messages.MessageProcFunc) {
+func (receiver ClientMessageObject) GetMappedTypes() map[int]messages.MessageProcFunc {
     msgMap := make(map[int]messages.MessageProcFunc)
     msgMap[messages.ProtocolTypeDeliver] = OnDeliver
     return msgMap
