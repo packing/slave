@@ -10,6 +10,8 @@ import (
 
     "github.com/go-sourcemap/sourcemap"
     "github.com/packing/clove/codecs"
+    "github.com/packing/clove/messages"
+    "github.com/packing/clove/nnet"
     "github.com/packing/clove/utils"
     "github.com/packing/goja"
     "github.com/packing/goja_nodejs/require"
@@ -272,6 +274,11 @@ func (n GojaVMNet) SendCurrentPlayer(call goja.FunctionCall) goja.Value {
 
     sAddr := n.vm.associatedSourceAddr
     sId := n.vm.associatedSourceId
+    sessId := n.vm.associatedSessionId
+    sm[int64(messages.ProtocolKeySessionId)] = []nnet.SessionID{sessId}
+
+    utils.LogError("reply >>>", sm)
+
     OnGojaSendMessage(sAddr, sId, sm)
 
     return n.vm.Runtime.ToValue(0)
@@ -675,6 +682,7 @@ type GojaVM struct {
     Runtime              *goja.Runtime
     associatedSourceAddr string
     associatedSourceId   uint64
+    associatedSessionId  uint64
     defKeyForLock        uint64
     defKeyForRedis       uint64
     sidForLock           int64
@@ -907,6 +915,14 @@ func (vm *GojaVM) GetAssociatedSourceAddr() string {
 
 func (vm *GojaVM) GetAssociatedSourceId() uint64 {
     return vm.associatedSourceId
+}
+
+func (vm *GojaVM) SetAssociatedSessionId(id uint64) {
+    vm.associatedSessionId = id
+}
+
+func (vm *GojaVM) GetAssociatedSessionId() uint64 {
+    return vm.associatedSessionId
 }
 
 func (vm *GojaVM) DispatchEnter(sessionId uint64, addr string) int {

@@ -4,6 +4,7 @@ import (
     "sync/atomic"
 
     "github.com/packing/clove/codecs"
+    "github.com/packing/clove/utils"
 
     "github.com/packing/clove/errors"
     "github.com/packing/clove/messages"
@@ -26,9 +27,11 @@ func OnDeliver(msg *messages.Message) error {
     vm := getVM()
     if vm != nil {
         vm.SetValue("CurrentSessionId", realMsg.GetSessionId()[0])
-        ssids := msg.GetSessionId()
-        if ssids != nil && len(ssids) > 0 {
-            vm.SetAssociatedSourceId(ssids[0])
+        vm.SetAssociatedSessionId(realMsg.GetSessionId()[0])
+
+        aids := msg.GetSessionId()
+        if aids != nil && len(aids) > 0 {
+            vm.SetAssociatedSourceId(aids[0])
         } else {
             vm.SetAssociatedSourceId(0)
             vm.SetAssociatedSourceAddr(msg.GetUnixSource())
@@ -62,6 +65,7 @@ func OnDeliver(msg *messages.Message) error {
         freeVM(vm)
     }
 
+    utils.LogError("errorCode >>>", msg.GetErrorCode())
     if msg.GetErrorCode() == 0 {
 
     } else {
