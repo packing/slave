@@ -150,6 +150,12 @@ func sendMessageTo(message codecs.IMData) int {
     return 0
 }
 
+func sendSysMessage(message codecs.IMData) int {
+    tcpCtrl.Send(message)
+    //utils.LogError("sendSysMessage >>>", message)
+    return 0
+}
+
 func main() {
 
     //runtime.GOMAXPROCS(2)
@@ -253,6 +259,7 @@ func main() {
 
         OnGojaSendMessage = sendMessage
         OnGojaSendMessageTo = sendMessageTo
+        OnGojaSendSysMessage = sendSysMessage
     } else {
         utils.LogError("!!!不支持的脚本引擎类型 %d", scriptEngine)
         return

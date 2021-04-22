@@ -21,6 +21,7 @@ var LogLevelAssert = utils.LogLevelError + 1
 
 var OnGojaSendMessage func(string, uint64, interface{}) int = nil
 var OnGojaSendMessageTo func(interface{}) int = nil
+var OnGojaSendSysMessage func(interface{}) int = nil
 
 var gojaRequire = new(require.Registry)
 
@@ -277,7 +278,7 @@ func (n GojaVMNet) SendCurrentPlayer(call goja.FunctionCall) goja.Value {
     sessId := n.vm.associatedSessionId
     sm[int64(messages.ProtocolKeySessionId)] = []nnet.SessionID{sessId}
 
-    utils.LogError("reply >>>", sm)
+    //utils.LogError("reply >>>", sm)
 
     OnGojaSendMessage(sAddr, sId, sm)
 
@@ -308,6 +309,41 @@ func (n GojaVMNet) SendToOtherPlayer(call goja.FunctionCall) goja.Value {
     sm := transferGojaMap2GoMap(m)
 
     OnGojaSendMessageTo(sm)
+
+    return n.vm.Runtime.ToValue(0)
+}
+
+func (n GojaVMNet) KillPlayers(call goja.FunctionCall) goja.Value {
+    if OnGojaSendSysMessage == nil {
+        return n.vm.Runtime.ToValue(-1)
+    }
+    if len(call.Arguments) == 0 {
+        return n.vm.Runtime.ToValue(-1)
+    }
+    if goja.IsUndefined(call.Arguments[0]) || goja.IsNull(call.Arguments[0]) {
+        return n.vm.Runtime.ToValue(-1)
+    }
+
+    im := call.Arguments[0].Export()
+    if im == nil {
+        return n.vm.Runtime.ToValue(-1)
+    }
+
+    m, ok := im.([]interface{})
+    if !ok {
+        return n.vm.Runtime.ToValue(-1)
+    }
+
+    msg := messages.CreateS2SMessage(messages.ProtocolTypeKillClient)
+    msg.SetTag(messages.ProtocolTagAdapter)
+
+    body := make(codecs.IMMap)
+    body[messages.ProtocolKeySessionId] = m
+    msg.SetBody(body)
+
+    msgData, _ := messages.DataFromMessage(msg)
+
+    OnGojaSendSysMessage(msgData)
 
     return n.vm.Runtime.ToValue(0)
 }
@@ -819,6 +855,7 @@ func (vm *GojaVM) Load(path string) bool {
     objNet := vm.Runtime.NewObject()
     objNet.Set("reply", gn.SendCurrentPlayer)
     objNet.Set("deliver", gn.SendToOtherPlayer)
+    objNet.Set("kick", gn.KillPlayers)
     vm.Runtime.Set("net", objNet)
 
     objLock := vm.Runtime.NewObject()

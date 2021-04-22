@@ -4,8 +4,6 @@ import (
     "sync/atomic"
 
     "github.com/packing/clove/codecs"
-    "github.com/packing/clove/utils"
-
     "github.com/packing/clove/errors"
     "github.com/packing/clove/messages"
 )
@@ -65,7 +63,7 @@ func OnDeliver(msg *messages.Message) error {
         freeVM(vm)
     }
 
-    utils.LogError("errorCode >>>", msg.GetErrorCode())
+    //utils.LogError("errorCode >>>", msg.GetErrorCode())
     if msg.GetErrorCode() == 0 {
 
     } else {
