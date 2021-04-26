@@ -250,6 +250,102 @@ func (n GojaVMNet) Decode(call goja.FunctionCall) goja.Value {
     return goja.Null()
 }
 
+func (n GojaVMNet) ReadFile(call goja.FunctionCall) goja.Value {
+    if len(call.Arguments) == 0 {
+        return goja.Null()
+    }
+    v := call.Arguments[0].String()
+    f, err := os.Open(v)
+    if os.IsNotExist(err) {
+        f.Close()
+        stacks := make([]goja.StackFrame, 5)
+        errStr := GenGojaStackFrameString(n.vm, "[J] !!! file does not exist.", n.vm.Runtime.CaptureCallStack(5, stacks))
+        utils.LogError(errStr)
+        return goja.Null()
+    }
+    if os.IsPermission(err) {
+        f.Close()
+        stacks := make([]goja.StackFrame, 5)
+        errStr := GenGojaStackFrameString(n.vm, "[J] !!! No access.", n.vm.Runtime.CaptureCallStack(5, stacks))
+        utils.LogError(errStr)
+        return goja.Null()
+    }
+    if os.IsTimeout(err) {
+        f.Close()
+        stacks := make([]goja.StackFrame, 5)
+        errStr := GenGojaStackFrameString(n.vm, "[J] !!! Read file timeout.", n.vm.Runtime.CaptureCallStack(5, stacks))
+        utils.LogError(errStr)
+        return goja.Null()
+    }
+    if err == nil {
+        f.Close()
+        data, err := ioutil.ReadFile(v)
+        if err == nil {
+            return n.vm.Runtime.ToValue(string(data))
+        } else {
+            stacks := make([]goja.StackFrame, 5)
+            errStr := GenGojaStackFrameString(n.vm, "[J] !!! Read file error.", n.vm.Runtime.CaptureCallStack(5, stacks))
+            utils.LogError(errStr)
+            return goja.Null()
+        }
+    }
+
+    return goja.Null()
+}
+
+func (n GojaVMNet) WriteFile(call goja.FunctionCall) goja.Value {
+    if len(call.Arguments) != 2 {
+        return n.vm.Runtime.ToValue(false)
+    }
+    v := call.Arguments[0].String()
+    c := call.Arguments[1].String()
+    err := ioutil.WriteFile(v, []byte(c), 0644)
+    if os.IsPermission(err) {
+        stacks := make([]goja.StackFrame, 5)
+        errStr := GenGojaStackFrameString(n.vm, "[J] !!! No access.", n.vm.Runtime.CaptureCallStack(5, stacks))
+        utils.LogError(errStr)
+        return n.vm.Runtime.ToValue(false)
+    }
+    if os.IsTimeout(err) {
+        stacks := make([]goja.StackFrame, 5)
+        errStr := GenGojaStackFrameString(n.vm, "[J] !!! Read file timeout.", n.vm.Runtime.CaptureCallStack(5, stacks))
+        utils.LogError(errStr)
+        return n.vm.Runtime.ToValue(false)
+    }
+    if err == nil {
+        return n.vm.Runtime.ToValue(true)
+    }
+
+    return n.vm.Runtime.ToValue(false)
+}
+
+func (n GojaVMNet) Exists(call goja.FunctionCall) goja.Value {
+    if len(call.Arguments) != 1 {
+        return n.vm.Runtime.ToValue(false)
+    }
+    v := call.Arguments[0].String()
+    _, err := os.Stat(v)
+    if os.IsNotExist(err) {
+        return n.vm.Runtime.ToValue(false)
+    }
+    return n.vm.Runtime.ToValue(true)
+}
+
+func (n GojaVMNet) Unlink(call goja.FunctionCall) goja.Value {
+    if len(call.Arguments) != 1 {
+        return n.vm.Runtime.ToValue(false)
+    }
+    v := call.Arguments[0].String()
+    err := os.Remove(v)
+    if os.IsNotExist(err) {
+        return n.vm.Runtime.ToValue(false)
+    }
+    if err != nil {
+        return n.vm.Runtime.ToValue(false)
+    }
+    return n.vm.Runtime.ToValue(true)
+}
+
 func (n GojaVMNet) SendCurrentPlayer(call goja.FunctionCall) goja.Value {
     if OnGojaSendMessage == nil {
         return n.vm.Runtime.ToValue(-1)
@@ -851,6 +947,13 @@ func (vm *GojaVM) Load(path string) bool {
     objGS.Set("encode", gn.Encode)
     objGS.Set("decode", gn.Decode)
     vm.Runtime.Set("sys", objGS)
+
+    objIO := vm.Runtime.NewObject()
+    objIO.Set("read", gn.ReadFile)
+    objIO.Set("write", gn.WriteFile)
+    objIO.Set("unlink", gn.Unlink)
+    objIO.Set("exists", gn.Exists)
+    vm.Runtime.Set("io", objIO)
 
     objNet := vm.Runtime.NewObject()
     objNet.Set("reply", gn.SendCurrentPlayer)
