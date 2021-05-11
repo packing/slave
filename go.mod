@@ -5,7 +5,7 @@ go 1.16
 require (
 	github.com/dlclark/regexp2 v1.4.0 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible
-	github.com/packing/clove v0.0.0-20210422135231-b22da0bd8ca5
+	github.com/packing/clove v0.0.0-20210511152116-04ac7729760e
 	github.com/packing/goja v0.0.0-20200920212024-281ab7ea99b1
 	github.com/packing/goja_nodejs v0.0.0-20200920203854-500fbd9f4405
 	github.com/packing/v8go v0.0.0-20210422140534-d132cff17433

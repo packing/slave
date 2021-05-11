@@ -1,6 +1,7 @@
 package main
 
 import (
+    "encoding/binary"
     "flag"
     "fmt"
     "log"
@@ -225,6 +226,9 @@ func main() {
 
     //注册解码器
     env.RegisterCodec(codecs.CodecIMv2)
+
+    codecs.CodecIMv2.Decoder.SetByteOrder(binary.BigEndian)
+    codecs.CodecIMv2.Encoder.SetByteOrder(binary.BigEndian)
 
     //注册通信协议
     env.RegisterPacketFormat(packets.PacketFormatNB)

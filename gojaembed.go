@@ -346,6 +346,31 @@ func (n GojaVMNet) Unlink(call goja.FunctionCall) goja.Value {
     return n.vm.Runtime.ToValue(true)
 }
 
+func (n GojaVMNet) TestValue(call goja.FunctionCall) goja.Value {
+    if OnGojaSendMessage == nil {
+        return n.vm.Runtime.ToValue(-1)
+    }
+    if len(call.Arguments) == 0 {
+        return n.vm.Runtime.ToValue(-1)
+    }
+    if goja.IsUndefined(call.Arguments[0]) || goja.IsNull(call.Arguments[0]) {
+        return n.vm.Runtime.ToValue(-1)
+    }
+
+    im := call.Arguments[0].Export()
+    if im == nil {
+        return n.vm.Runtime.ToValue(-1)
+    }
+
+    m, ok := im.(map[string]interface{})
+    if !ok {
+        return n.vm.Runtime.ToValue(-1)
+    }
+
+    sm := transferGojaMap2GoMap(m)
+    return n.vm.Runtime.ToValue(transferGoMap2GojaMap(sm))
+}
+
 func (n GojaVMNet) SendCurrentPlayer(call goja.FunctionCall) goja.Value {
     if OnGojaSendMessage == nil {
         return n.vm.Runtime.ToValue(-1)
@@ -959,6 +984,7 @@ func (vm *GojaVM) Load(path string) bool {
     objNet.Set("reply", gn.SendCurrentPlayer)
     objNet.Set("deliver", gn.SendToOtherPlayer)
     objNet.Set("kick", gn.KillPlayers)
+    objNet.Set("test", gn.TestValue)
     vm.Runtime.Set("net", objNet)
 
     objLock := vm.Runtime.NewObject()
