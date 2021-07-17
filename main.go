@@ -242,7 +242,7 @@ func main() {
         }
     }
 
-    globalStorage = storage.CreateClient(addrStorage, time.Second * 5)
+    globalStorage = storage.CreateClientWithBufferSize(addrStorage, time.Second * 5, 0xffffff, 0xffffff)
 
     if scriptEngine == ScriptEngineV8 {
         /*utils.LogInfo("==============================================================")
@@ -281,7 +281,7 @@ func main() {
     messages.GlobalDispatcher.Dispatch()
 
     //初始化unixsocket发送管道
-    unix = nnet.CreateUnixUDPWithFormat(packets.PacketFormatNB, codecs.CodecIMv2)
+    unix = nnet.CreateUnixUDPWithFormatAndBufferSize(packets.PacketFormatNB, codecs.CodecIMv2, 0xffffff,0xffffff)
     unix.OnDataDecoded = messages.GlobalMessageQueue.Push
     err = unix.Bind(unixAddr)
     if err != nil {
