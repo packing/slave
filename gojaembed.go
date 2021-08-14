@@ -5,6 +5,7 @@ import (
     "io/ioutil"
     "net/url"
     "os"
+    "reflect"
     "strconv"
     "sync/atomic"
 
@@ -163,6 +164,7 @@ func transferGojaArray2GoArray(goArray []interface{}) []interface{} {
     newArray := make([]interface{}, len(goArray))
     for i, v := range goArray {
         switch v.(type) {
+        /*
         case float64:
             if float64(int64(v.(float64))) == v {
                 newArray[i] = int64(v.(float64))
@@ -174,7 +176,7 @@ func transferGojaArray2GoArray(goArray []interface{}) []interface{} {
                 newArray[i] = int32(v.(float32))
             } else if float32(uint32(v.(float32))) == v {
                 newArray[i] = uint32(v.(float32))
-            }
+            }*/
         case map[string]interface{}:
             newArray[i] = transferGojaMap2GoMap(v.(map[string]interface{}))
         case []interface{}:
@@ -192,6 +194,7 @@ func transferGojaMap2GoMap(goMap map[string]interface{}) map[interface{}]interfa
 
         rv := v
         switch rv.(type) {
+        /*
         case float64:
             if float64(int64(rv.(float64))) == rv {
                 rv = int64(rv.(float64))
@@ -203,7 +206,7 @@ func transferGojaMap2GoMap(goMap map[string]interface{}) map[interface{}]interfa
                 rv = int32(rv.(float32))
             } else if float32(uint32(rv.(float32))) == rv {
                 rv = uint32(rv.(float32))
-            }
+            }*/
         case map[string]interface{}:
             rv = transferGojaMap2GoMap(v.(map[string]interface{}))
         case []interface{}:
@@ -215,6 +218,9 @@ func transferGojaMap2GoMap(goMap map[string]interface{}) map[interface{}]interfa
             out[k] = rv
         } else {
             out[rk] = rv
+        }
+        if rv != nil {
+            utils.LogInfo("tp", rv, reflect.ValueOf(rv).Type().Kind())
         }
     }
     return out

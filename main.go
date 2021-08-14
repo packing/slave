@@ -304,7 +304,7 @@ func main() {
 
     go func() {
         for {
-            if !daemon {
+            if false && !daemon {
                 agvt, tmax, tmin := messages.GlobalDispatcher.GetAsyncInfo()
                 fmt.Printf(">>> 当前 事务 = [平均: %.2f, 峰值: %.2f | %.2f] VM = [FREE: %d, USED: %d] 网络 = [TCP读: %d, TCP写: %d, UNIX读: %d, UNIX写: %d, 流解锁: %d, 逻辑锁: %d / %d]\r",
                     float64(agvt)/float64(time.Millisecond), float64(tmin)/float64(time.Millisecond), float64(tmax)/float64(time.Millisecond),
