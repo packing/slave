@@ -6,7 +6,6 @@ import (
     "github.com/packing/clove/codecs"
     "github.com/packing/clove/errors"
     "github.com/packing/clove/messages"
-    "github.com/packing/clove/utils"
 )
 
 type ClientMessageObject struct {
@@ -17,8 +16,6 @@ func OnDeliver(msg *messages.Message) error {
     if data == nil {
         return errors.ErrorDataIsDamage
     }
-
-    utils.LogInfo("OnDeliver", data)
 
     realMsg, err := messages.MessageFromData(nil, "", data)
     if err != nil || realMsg == nil {

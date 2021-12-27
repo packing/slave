@@ -5,7 +5,6 @@ import (
     "io/ioutil"
     "net/url"
     "os"
-    "reflect"
     "strconv"
     "sync/atomic"
 
@@ -220,7 +219,7 @@ func transferGojaMap2GoMap(goMap map[string]interface{}) map[interface{}]interfa
             out[rk] = rv
         }
         if rv != nil {
-            utils.LogInfo("tp", rv, reflect.ValueOf(rv).Type().Kind())
+            //utils.LogInfo("tp", rv, reflect.ValueOf(rv).Type().Kind())
         }
     }
     return out
